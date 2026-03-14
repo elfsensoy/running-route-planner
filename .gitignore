@@ -1,0 +1,28 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables (API keys etc.)
+.env
+
+# Jupyter notebook cache
+.ipynb_checkpoints/
+
+# Mac system files
+.DS_Store
+
+# VSCode settings
+.vscode/
+
+# Temporary files
+*.log
+*.tmp
+
+# Large raw data (optional)
+data/raw/large_files/
