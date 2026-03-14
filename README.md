@@ -10,7 +10,7 @@ A graduation project focused on generating personalized running and walking rout
 - Static geospatial dataset construction for Fatih
 - Route generation using graph-based methods
 - Baseline and PSP-based routing experiments
-- Basic web interface prototype
+- Basic web interface prototype.
 
 ## Repository Structure
 - `data/`: raw and processed datasets
