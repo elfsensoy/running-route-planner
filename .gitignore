@@ -10,6 +10,7 @@ env/
 
 # Environment variables (API keys etc.)
 .env
+GOOGLE_API_KEY = AIzaSyCJNf4AhO-uNkPF5cX8Gf-UrKq-ZpgraTs
 
 # Jupyter notebook cache
 .ipynb_checkpoints/
