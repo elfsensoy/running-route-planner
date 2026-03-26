@@ -7,7 +7,7 @@ EDGES_PATH = BASE_DIR / "data" / "processed" / "fatih_edges_clean.csv"
 POIS_PATH = BASE_DIR / "data" / "processed" / "fatih_pois_edge_mapped.csv"
 OUTPUT_PATH = BASE_DIR / "data" / "processed" / "fatih_edges_poi_enriched.csv"
 
-EDGE_DISTANCE_THRESHOLD = 15  # meters
+EDGE_DISTANCE_THRESHOLD = 25  # meters
 
 
 def main():
