@@ -18,3 +18,6 @@ A graduation project focused on generating personalized running and walking rout
 - `docs/`: project notes and design decisions
 - `reports/`: course reports
 - `tests/`: test code
+
+## temporaray notes
+- poi datatset in son hali fatih_pois_filtered

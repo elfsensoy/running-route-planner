@@ -3,7 +3,7 @@ import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 
-NODE_PATH = BASE_DIR / "data" / "processed" / "fatih_pois_mapped.csv"
+NODE_PATH = BASE_DIR / "data" / "processed" / "fatih_pois_mapped_nearest.csv"
 EDGE_PATH = BASE_DIR / "data" / "processed" / "fatih_pois_edge_mapped.csv"
 
 
