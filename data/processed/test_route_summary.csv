@@ -1,0 +1,10 @@
+selected_poi_ids,selected_poi_names,selected_poi_groups,total_length_m,segment_lengths_m,route_node_count
+5110342142 | 4763681623,Molla Hüsrev cami Turbası | Alfred Heilbronn Botanik Bahçesi,museum_historic | park_garden,1762.368764444378,41.05 | 855.25 | 866.06,39
+4506783904 | 4763681623,Kanuni Sultan Suleyman 1 Turbesi | Alfred Heilbronn Botanik Bahçesi,museum_historic | park_garden,1908.0524279326328,448.67 | 593.32 | 866.06,41
+6916379085 | 4763681623,İstanbul’un Orta Noktası | Alfred Heilbronn Botanik Bahçesi,museum_historic | park_garden,2240.4633223932015,288.59 | 1085.81 | 866.06,50
+5110342142 | 8735018410,Molla Hüsrev cami Turbası | Mehmet Akif Ersoy Parkı,museum_historic | park_garden,3599.239440384379,41.05 | 1799.62 | 1758.57,89
+6916379085 | 8735018410,İstanbul’un Orta Noktası | Mehmet Akif Ersoy Parkı,museum_historic | park_garden,3765.8536605787303,288.59 | 1718.69 | 1758.57,95
+4506783904 | 8735018410,Kanuni Sultan Suleyman 1 Turbesi | Mehmet Akif Ersoy Parkı,museum_historic | park_garden,3810.775805637189,448.67 | 1603.54 | 1758.57,94
+5110342142 | 10127887983,Molla Hüsrev cami Turbası | Keyci Hatun Parkı,museum_historic | park_garden,3864.11585876104,41.05 | 1891.00 | 1932.06,87
+6916379085 | 10127887983,İstanbul’un Orta Noktası | Keyci Hatun Parkı,museum_historic | park_garden,3864.11585876104,288.59 | 1643.46 | 1932.06,87
+4506783904 | 10127887983,Kanuni Sultan Suleyman 1 Turbesi | Keyci Hatun Parkı,museum_historic | park_garden,4725.102813278731,448.67 | 2344.37 | 1932.06,103

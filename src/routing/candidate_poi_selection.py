@@ -13,7 +13,7 @@ GRAPH_PATH = BASE_DIR / "data" / "raw" / "fatih_walk.graphml"
 POIS_PATH = BASE_DIR / "data" / "processed" / "fatih_pois_edge_mapped.csv"
 OUTPUT_PATH = BASE_DIR / "data" / "processed" / "candidate_pois.csv"
 
-CANDIDATE_DISTANCE_RATIO = 0.65
+CANDIDATE_DISTANCE_RATIO = 0.75
 CANDIDATE_MULTIPLIER = 10
 
 
