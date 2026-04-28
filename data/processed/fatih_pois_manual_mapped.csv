@@ -1,0 +1,6 @@
+poi_id,name,lat,lon,category,mapped_node_id
+1,Ayasofya,41.0086,28.9802,museum_historic,4078371620
+2,Sultanahmet Meydanı,41.0065,28.9768,viewpoint_attraction,3076865590
+3,Gülhane Parkı,41.013,28.9815,park_garden,3078464253
+4,Topkapı Sarayı,41.0115,28.9833,museum_historic,2674488923
+5,Eminönü Meydanı,41.0179,28.97,viewpoint_attraction,11812527179
