@@ -20,6 +20,8 @@ MAX_POIS_PER_GROUP = 10
 MAX_TOTAL_POIS = 10
 EXACT_ORDER_LIMIT = 4
 OVERLAP_RATIO_TOLERANCE = 0.03
+DIVERSITY_DISTANCE_WEIGHT = 1.25
+MIN_SAME_GROUP_SPACING_M = 180
 
 
 class RouteGenerationError(ValueError):
@@ -196,6 +198,66 @@ def select_top_k_per_group(df: pd.DataFrame, group_name: str, k: int) -> pd.Data
     return group_df.head(k).copy()
 
 
+def node_straight_distance(graph: nx.MultiDiGraph, node1: int, node2: int) -> float:
+    x1 = float(graph.nodes[node1]["x"])
+    y1 = float(graph.nodes[node1]["y"])
+    x2 = float(graph.nodes[node2]["x"])
+    y2 = float(graph.nodes[node2]["y"])
+    return ox.distance.great_circle(y1, x1, y2, x2)
+
+
+def select_diverse_candidates_per_group(
+    df: pd.DataFrame,
+    group_name: str,
+    k: int,
+    graph: nx.MultiDiGraph,
+) -> pd.DataFrame:
+    group_df = df[df["poi_group"] == group_name].copy()
+    group_df = group_df.sort_values("network_distance_from_start_m", ascending=True)
+
+    if len(group_df) <= k:
+        return group_df
+
+    pool = [row for _, row in group_df.iterrows()]
+    selected = [pool.pop(0)]
+
+    while pool and len(selected) < k:
+        def candidate_score(row):
+            distance_from_start = float(row["network_distance_from_start_m"])
+            same_access_node_penalty = 10000 if any(
+                int(row["access_node"]) == int(selected_row["access_node"])
+                for selected_row in selected
+            ) else 0
+            nearest_selected_distance = min(
+                node_straight_distance(
+                    graph,
+                    int(row["access_node"]),
+                    int(selected_row["access_node"]),
+                )
+                for selected_row in selected
+            )
+            spacing_penalty = (
+                2000
+                if nearest_selected_distance < MIN_SAME_GROUP_SPACING_M
+                else 0
+            )
+            return (
+                distance_from_start
+                + same_access_node_penalty
+                + spacing_penalty
+                - (nearest_selected_distance * DIVERSITY_DISTANCE_WEIGHT)
+            )
+
+        next_index, next_row = min(
+            enumerate(pool),
+            key=lambda item: candidate_score(item[1]),
+        )
+        selected.append(next_row)
+        pool.pop(next_index)
+
+    return pd.DataFrame(selected)
+
+
 def build_loop_for_order(
     graph: nx.MultiDiGraph,
     start_node: int,
@@ -303,6 +365,16 @@ def is_better(candidate: Dict, current_best: Optional[Dict]) -> bool:
     if candidate["within_target_range"] and not current_best["within_target_range"]:
         return True
     if current_best["within_target_range"] and not candidate["within_target_range"]:
+        return False
+
+    if not candidate["within_target_range"] and not current_best["within_target_range"]:
+        if candidate["distance_error_m"] != current_best["distance_error_m"]:
+            return candidate["distance_error_m"] < current_best["distance_error_m"]
+        return candidate["overlap_ratio"] < current_best["overlap_ratio"]
+
+    if candidate["distance_error_m"] < current_best["distance_error_m"] - 250:
+        return True
+    if current_best["distance_error_m"] < candidate["distance_error_m"] - 250:
         return False
 
     overlap_delta = candidate["overlap_ratio"] - current_best["overlap_ratio"]
@@ -453,7 +525,15 @@ def generate_route(
     group_candidate_lists = {}
     for group, desired_count in requested_groups.items():
         top_k = max(desired_count, min(desired_count + 2, TOP_K_PER_GROUP))
-        top_group_df = select_top_k_per_group(candidates_df, group, top_k)
+        if desired_count >= 4:
+            top_group_df = select_diverse_candidates_per_group(
+                candidates_df,
+                group,
+                top_k,
+                graph,
+            )
+        else:
+            top_group_df = select_top_k_per_group(candidates_df, group, top_k)
         if top_group_df.empty:
             raise RouteGenerationError(f"No candidates found for group: {group}")
         if len(top_group_df) < desired_count:
@@ -481,9 +561,6 @@ def generate_route(
     for grouped_combo in product(*group_selection_lists):
         combinations_evaluated += 1
         combo = [row for group_rows in grouped_combo for row in group_rows]
-        access_nodes = [int(row["access_node"]) for row in combo]
-        if len(access_nodes) != len(set(access_nodes)):
-            continue
 
         for ordered_combo in route_order_variants(combo, start_node, graph):
             permutations_evaluated += 1

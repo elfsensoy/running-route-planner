@@ -11,11 +11,22 @@ let routeLayer = null;
 let poiLayer = L.layerGroup().addTo(map);
 let startMarker = null;
 let endMarker = null;
+let selectionMode = null;
+
+const categoryColors = {
+  food: "#d95f02",
+  museum_historic: "#6a3d9a",
+  park_garden: "#1b9e77",
+  viewpoint_attraction: "#1f78b4",
+};
+const defaultCategoryColor = "#7570b3";
 
 const form = document.querySelector("#route-form");
 const statusEl = document.querySelector("#status");
 const generateButton = document.querySelector("#generate-button");
 const currentLocationButton = document.querySelector("#current-location-button");
+const pickStartButton = document.querySelector("#pick-start-button");
+const pickFinalButton = document.querySelector("#pick-final-button");
 const routeDistanceEl = document.querySelector("#route-distance");
 const routeFitEl = document.querySelector("#route-fit");
 const selectedPoisEl = document.querySelector("#selected-pois");
@@ -28,6 +39,21 @@ const startLonInput = document.querySelector("#start-lon");
 const endLatInput = document.querySelector("#end-lat");
 const endLonInput = document.querySelector("#end-lon");
 
+function colorForGroup(group) {
+  return categoryColors[group] || defaultCategoryColor;
+}
+
+function poiIcon(group, index) {
+  const color = colorForGroup(group);
+  return L.divIcon({
+    className: "",
+    html: `<div class="poi-marker" style="background:${color}">${index}</div>`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
+    popupAnchor: [0, -14],
+  });
+}
+
 function refreshMapSize() {
   window.requestAnimationFrame(() => {
     map.invalidateSize();
@@ -37,6 +63,50 @@ function refreshMapSize() {
 function setStatus(message, isError = false) {
   statusEl.textContent = message;
   statusEl.classList.toggle("error", isError);
+}
+
+function setSelectionMode(mode) {
+  selectionMode = selectionMode === mode ? null : mode;
+  pickStartButton.classList.toggle("active", selectionMode === "start");
+  pickFinalButton.classList.toggle("active", selectionMode === "final");
+
+  if (selectionMode === "start") {
+    setStatus("Click the map to set the start point.");
+  } else if (selectionMode === "final") {
+    setStatus("Click the map to set the final point.");
+  } else {
+    setStatus("Ready");
+  }
+}
+
+function setStartMarker(lat, lon) {
+  if (startMarker) {
+    map.removeLayer(startMarker);
+  }
+  startMarker = L.circleMarker([lat, lon], {
+    radius: 8,
+    color: "#17211b",
+    fillColor: "#ffffff",
+    fillOpacity: 1,
+    weight: 3,
+  })
+    .bindPopup("Start")
+    .addTo(map);
+}
+
+function setEndMarker(lat, lon) {
+  if (endMarker) {
+    map.removeLayer(endMarker);
+  }
+  endMarker = L.circleMarker([lat, lon], {
+    radius: 8,
+    color: "#b45c16",
+    fillColor: "#ffffff",
+    fillOpacity: 1,
+    weight: 3,
+  })
+    .bindPopup("Final point")
+    .addTo(map);
 }
 
 function checkedPoiPreferences() {
@@ -100,32 +170,18 @@ function drawRoute(data) {
     lineJoin: "round",
   }).addTo(map);
 
-  startMarker = L.circleMarker([data.start.lat, data.start.lon], {
-    radius: 8,
-    color: "#17211b",
-    fillColor: "#ffffff",
-    fillOpacity: 1,
-    weight: 3,
-  })
-    .bindPopup("Start")
-    .addTo(map);
+  setStartMarker(data.start.lat, data.start.lon);
 
   if (data.end) {
-    endMarker = L.circleMarker([data.end.lat, data.end.lon], {
-      radius: 8,
-      color: "#b45c16",
-      fillColor: "#ffffff",
-      fillOpacity: 1,
-      weight: 3,
-    })
-      .bindPopup("Final point")
-      .addTo(map);
+    setEndMarker(data.end.lat, data.end.lon);
   } else {
     endMarker = null;
   }
 
   data.selected_pois.forEach((poi, index) => {
-    L.marker([poi.lat, poi.lon])
+    L.marker([poi.lat, poi.lon], {
+      icon: poiIcon(poi.poi_group, index + 1),
+    })
       .bindPopup(`<strong>${index + 1}. ${poi.name}</strong><br>${poi.poi_group}`)
       .addTo(poiLayer);
   });
@@ -142,7 +198,13 @@ function renderSummary(data) {
   selectedPoisEl.innerHTML = "";
   data.selected_pois.forEach((poi) => {
     const item = document.createElement("li");
-    item.innerHTML = `${poi.name}<span>${poi.poi_group}</span>`;
+    item.innerHTML = `
+      <span class="poi-name">
+        <span class="color-swatch" style="background:${colorForGroup(poi.poi_group)}"></span>
+        ${poi.name}
+      </span>
+      <span>${poi.poi_group}</span>
+    `;
     selectedPoisEl.appendChild(item);
   });
 }
@@ -165,7 +227,8 @@ async function loadPoiGroups() {
       const label = document.createElement("label");
       label.className = "poi-count-row";
       const labelText = document.createElement("span");
-      labelText.textContent = group.replaceAll("_", " ");
+      labelText.className = "poi-label";
+      labelText.innerHTML = `<span class="color-swatch" style="background:${colorForGroup(group)}"></span>${group.replaceAll("_", " ")}`;
       const input = document.createElement("input");
       input.type = "number";
       input.min = "0";
@@ -233,6 +296,7 @@ currentLocationButton.addEventListener("click", () => {
       const lon = position.coords.longitude.toFixed(6);
       startLatInput.value = lat;
       startLonInput.value = lon;
+      setStartMarker(Number(lat), Number(lon));
       map.setView([Number(lat), Number(lon)], 15);
       setStatus("Current location set.");
     },
@@ -244,24 +308,55 @@ currentLocationButton.addEventListener("click", () => {
 });
 
 function updateFinalPointVisibility() {
-  const showFinal = useFinalPointInput.checked && !loopRouteInput.checked;
+  const showFinal = useFinalPointInput.checked;
   finalPointFields.classList.toggle("hidden", !showFinal);
-  useFinalPointInput.disabled = loopRouteInput.checked;
+  pickFinalButton.classList.toggle("hidden", !showFinal);
+}
+
+loopRouteInput.addEventListener("change", () => {
   if (loopRouteInput.checked) {
     useFinalPointInput.checked = false;
   }
-}
+  updateFinalPointVisibility();
+});
 
-loopRouteInput.addEventListener("change", updateFinalPointVisibility);
-useFinalPointInput.addEventListener("change", updateFinalPointVisibility);
+useFinalPointInput.addEventListener("change", () => {
+  if (useFinalPointInput.checked) {
+    loopRouteInput.checked = false;
+  }
+  updateFinalPointVisibility();
+});
+
+pickStartButton.addEventListener("click", () => {
+  setSelectionMode("start");
+});
+
+pickFinalButton.addEventListener("click", () => {
+  setSelectionMode("final");
+});
 
 map.on("click", (event) => {
-  if (!useFinalPointInput.checked || loopRouteInput.checked) {
+  if (selectionMode === "start") {
+    startLatInput.value = event.latlng.lat.toFixed(6);
+    startLonInput.value = event.latlng.lng.toFixed(6);
+    setStartMarker(event.latlng.lat, event.latlng.lng);
+    setSelectionMode(null);
+    setStatus("Start point set from map click.");
     return;
   }
-  endLatInput.value = event.latlng.lat.toFixed(6);
-  endLonInput.value = event.latlng.lng.toFixed(6);
-  setStatus("Final point set from map click.");
+
+  if (selectionMode === "final" || useFinalPointInput.checked) {
+    if (!useFinalPointInput.checked) {
+      useFinalPointInput.checked = true;
+      loopRouteInput.checked = false;
+      updateFinalPointVisibility();
+    }
+    endLatInput.value = event.latlng.lat.toFixed(6);
+    endLonInput.value = event.latlng.lng.toFixed(6);
+    setEndMarker(event.latlng.lat, event.latlng.lng);
+    setSelectionMode(null);
+    setStatus("Final point set from map click.");
+  }
 });
 
 loadPoiGroups();
