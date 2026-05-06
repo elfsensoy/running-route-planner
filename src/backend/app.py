@@ -51,6 +51,9 @@ def create_route(payload: RouteRequest):
             max_distance_km=payload.max_distance_km,
             poi_preferences=payload.poi_preferences,
             routing_algorithm=payload.routing_algorithm,
+            loop_route=payload.loop_route,
+            end_lat=payload.end_lat,
+            end_lon=payload.end_lon,
         )
     except RouteGenerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

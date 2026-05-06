@@ -107,7 +107,8 @@ input:focus {
   gap: 8px;
 }
 
-.poi-groups label,
+.poi-count-row,
+.option-row,
 .segmented label {
   flex-direction: row;
   align-items: center;
@@ -116,11 +117,31 @@ input:focus {
   font-weight: 650;
 }
 
-.poi-groups label {
+.option-row {
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.hidden {
+  display: none;
+}
+
+.poi-count-row {
+  justify-content: space-between;
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
+}
+
+.poi-count-row span {
+  overflow-wrap: anywhere;
+}
+
+.poi-count-row input {
+  width: 64px;
+  min-height: 34px;
+  text-align: center;
 }
 
 .segmented {
@@ -145,6 +166,20 @@ button {
   font: inherit;
   font-weight: 800;
   cursor: pointer;
+}
+
+.secondary-button {
+  width: 100%;
+  min-height: 38px;
+  margin-bottom: 10px;
+  border: 1px solid var(--line);
+  color: var(--accent-strong);
+  background: var(--surface);
+}
+
+.secondary-button:hover {
+  color: #fff;
+  background: var(--accent);
 }
 
 button:hover {

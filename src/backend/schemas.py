@@ -1,4 +1,4 @@
-from typing import Dict, List, Literal
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -11,6 +11,9 @@ class RouteRequest(BaseModel):
     poi_preferences: Dict[str, int] = Field(default_factory=dict)
     routing_algorithm: Literal["astar", "dijkstra"] = "astar"
     elevation_preference: Literal["low", "medium", "high", "none"] = "none"
+    loop_route: bool = True
+    end_lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    end_lon: Optional[float] = Field(default=None, ge=-180, le=180)
 
     @field_validator("max_distance_km")
     @classmethod
@@ -27,10 +30,10 @@ class RouteRequest(BaseModel):
         if not selected:
             raise ValueError("Select at least one POI category")
         for group, count in selected.items():
-            if count != 1:
-                raise ValueError(
-                    f"This prototype supports one POI per selected group. '{group}' requested {count}."
-                )
+            if count > 10:
+                raise ValueError(f"Select at most 10 POIs for '{group}'")
+        if sum(selected.values()) > 10:
+            raise ValueError("Select at most 10 POIs in total")
         return poi_preferences
 
 
@@ -52,12 +55,16 @@ class RouteInfo(BaseModel):
     total_length_m: float
     total_length_km: float
     within_target_range: bool
+    is_suggestion: bool
     distance_error_m: float
+    overlap_ratio: float
+    repeated_edge_distance_m: float
     segment_lengths_m: List[float]
 
 
 class RouteResponse(BaseModel):
     start: dict
+    end: Optional[dict] = None
     route: RouteInfo
     selected_pois: List[SelectedPoi]
     metrics: dict
