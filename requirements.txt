@@ -4,3 +4,6 @@ pandas
 geopandas
 matplotlib
 requests
+fastapi
+uvicorn[standard]
+scikit-learn

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Running Route Planner</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=2" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="control-panel">
+        <div class="brand">
+          <p>Fatih, Istanbul</p>
+          <h1>Running Route Planner</h1>
+        </div>
+
+        <form id="route-form" class="route-form">
+          <section>
+            <h2>Start</h2>
+            <div class="field-grid">
+              <label>
+                Latitude
+                <input id="start-lat" name="start_lat" type="number" step="0.000001" value="41.015" required />
+              </label>
+              <label>
+                Longitude
+                <input id="start-lon" name="start_lon" type="number" step="0.000001" value="28.960" required />
+              </label>
+            </div>
+          </section>
+
+          <section>
+            <h2>Distance</h2>
+            <div class="field-grid">
+              <label>
+                Min km
+                <input id="min-distance" name="min_distance_km" type="number" step="0.1" min="0.5" value="4" required />
+              </label>
+              <label>
+                Max km
+                <input id="max-distance" name="max_distance_km" type="number" step="0.1" min="0.5" value="5" required />
+              </label>
+            </div>
+          </section>
+
+          <section>
+            <h2>POIs</h2>
+            <div id="poi-groups" class="poi-groups">
+              <label><input type="checkbox" value="museum_historic" checked /> Museum & historic</label>
+              <label><input type="checkbox" value="park_garden" checked /> Park & garden</label>
+              <label><input type="checkbox" value="viewpoint_attraction" checked /> Viewpoint & attraction</label>
+              <label><input type="checkbox" value="food" checked /> Food</label>
+            </div>
+          </section>
+
+          <section>
+            <h2>Routing</h2>
+            <div class="segmented">
+              <label><input type="radio" name="routing_algorithm" value="astar" checked /> A*</label>
+              <label><input type="radio" name="routing_algorithm" value="dijkstra" /> Dijkstra</label>
+            </div>
+          </section>
+
+          <button id="generate-button" type="submit">Generate route</button>
+        </form>
+
+        <section id="result-panel" class="result-panel" aria-live="polite">
+          <div>
+            <span class="metric-label">Route</span>
+            <strong id="route-distance">No route yet</strong>
+          </div>
+          <div>
+            <span class="metric-label">Target fit</span>
+            <strong id="route-fit">Waiting</strong>
+          </div>
+          <ol id="selected-pois" class="selected-pois"></ol>
+        </section>
+      </aside>
+
+      <section class="map-panel">
+        <div id="map"></div>
+        <div id="status" class="status">Ready</div>
+      </section>
+    </main>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="/static/app.js?v=2"></script>
+  </body>
+</html>

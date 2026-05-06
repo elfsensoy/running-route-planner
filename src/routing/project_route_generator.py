@@ -52,6 +52,25 @@ def heuristic_distance(graph: nx.MultiDiGraph, node1: int, node2: int) -> float:
     return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
 
 
+def get_edge_length_sum(graph: nx.MultiDiGraph, route_nodes: List[int]) -> float:
+    """
+    Sum shortest parallel-edge lengths along a node path.
+    """
+    total = 0.0
+
+    for u, v in zip(route_nodes[:-1], route_nodes[1:]):
+        edge_data = graph.get_edge_data(u, v)
+        if edge_data is None:
+            raise ValueError(f"No edge found between consecutive route nodes: {u} -> {v}")
+
+        total += min(
+            data.get("length", float("inf"))
+            for data in edge_data.values()
+        )
+
+    return total
+
+
 def build_segment(
     graph: nx.MultiDiGraph,
     source: int,
@@ -73,7 +92,7 @@ def build_segment(
             heuristic=lambda u, v: heuristic_distance(graph, u, v),
             weight="length"
         )
-        path_length = nx.path_weight(graph, path_nodes, weight="length")
+        path_length = get_edge_length_sum(graph, path_nodes)
 
     else:
         raise ValueError(f"Unsupported routing algorithm: {routing_algorithm}")
