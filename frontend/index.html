@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Running Route Planner</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="/static/styles.css?v=7" />
+    <link rel="stylesheet" href="/static/styles.css?v=10" />
   </head>
   <body>
     <main class="app-shell">
@@ -103,7 +103,29 @@
             <span class="metric-label">Target fit</span>
             <strong id="route-fit">Waiting</strong>
           </div>
+          <div id="route-options" class="route-options hidden"></div>
           <ol id="selected-pois" class="selected-pois"></ol>
+          <div id="tracking-panel" class="tracking-panel hidden">
+            <button id="tracking-button" type="button" class="secondary-button">Start tracking</button>
+            <div class="tracking-grid">
+              <div>
+                <span class="metric-label">Tracking</span>
+                <strong id="tracking-state">Stopped</strong>
+              </div>
+              <div>
+                <span class="metric-label">To route</span>
+                <strong id="tracking-distance">--</strong>
+              </div>
+              <div>
+                <span class="metric-label">Progress</span>
+                <strong id="tracking-progress">--</strong>
+              </div>
+              <div>
+                <span class="metric-label">Remaining</span>
+                <strong id="tracking-remaining">--</strong>
+              </div>
+            </div>
+          </div>
         </section>
       </aside>
 
@@ -114,6 +136,6 @@
     </main>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="/static/app.js?v=8"></script>
+    <script src="/static/app.js?v=13"></script>
   </body>
 </html>

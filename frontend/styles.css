@@ -312,6 +312,46 @@ button:disabled {
   padding-left: 20px;
 }
 
+.route-options {
+  display: grid;
+  gap: 8px;
+}
+
+.route-options.hidden {
+  display: none;
+}
+
+.route-option-button {
+  display: grid;
+  gap: 4px;
+  min-height: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  text-align: left;
+  background: var(--surface);
+}
+
+.route-option-button:hover,
+.route-option-button.active {
+  border-color: rgba(23, 114, 69, 0.4);
+  color: var(--ink);
+  background: rgba(23, 114, 69, 0.08);
+}
+
+.route-option-button span,
+.route-option-button small {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.route-option-button small {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .selected-pois li {
   margin-bottom: 8px;
 }
@@ -320,6 +360,35 @@ button:disabled {
   display: block;
   color: var(--muted);
   font-size: 0.8rem;
+}
+
+.tracking-panel {
+  display: grid;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.tracking-panel.hidden {
+  display: none;
+}
+
+.tracking-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.tracking-grid > div {
+  min-height: 62px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.tracking-grid strong {
+  font-size: 0.96rem;
 }
 
 .map-panel {

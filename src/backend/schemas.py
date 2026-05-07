@@ -66,5 +66,6 @@ class RouteResponse(BaseModel):
     start: dict
     end: Optional[dict] = None
     route: RouteInfo
+    route_options: List[dict] = Field(default_factory=list)
     selected_pois: List[SelectedPoi]
     metrics: dict

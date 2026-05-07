@@ -22,6 +22,7 @@ EXACT_ORDER_LIMIT = 4
 OVERLAP_RATIO_TOLERANCE = 0.03
 DIVERSITY_DISTANCE_WEIGHT = 1.25
 MIN_SAME_GROUP_SPACING_M = 180
+ROUTE_OPTION_COUNT = 3
 
 
 class RouteGenerationError(ValueError):
@@ -441,6 +442,55 @@ def is_better(candidate: Dict, current_best: Optional[Dict]) -> bool:
     return candidate["total_length_m"] < current_best["total_length_m"]
 
 
+def route_similarity_key(route_result: Dict) -> tuple:
+    poi_ids = tuple(sorted(poi["poi_id"] for poi in route_result["selected_pois"]))
+    rounded_length = round(route_result["total_length_m"] / 100)
+    return poi_ids, rounded_length
+
+
+def add_route_option(route_options: List[Dict], route_result: Dict) -> None:
+    candidate_key = route_similarity_key(route_result)
+    for index, existing in enumerate(route_options):
+        if route_similarity_key(existing) != candidate_key:
+            continue
+        if is_better(route_result, existing):
+            route_options[index] = route_result
+            route_options.sort(key=route_rank_key)
+        return
+
+    route_options.append(route_result)
+    route_options.sort(key=route_rank_key)
+    del route_options[ROUTE_OPTION_COUNT:]
+
+
+def route_rank_key(route_result: Dict) -> tuple:
+    return (
+        0 if route_result["within_target_range"] else 1,
+        route_result["distance_error_m"],
+        route_result["overlap_ratio"],
+        route_result["total_length_m"],
+    )
+
+
+def serialize_route_result(graph: nx.MultiDiGraph, route_result: Dict) -> Dict:
+    route_nodes = [int(node_id) for node_id in route_result["route_nodes"]]
+    route_coordinates = [node_coordinates(graph, node_id) for node_id in route_nodes]
+    return {
+        "nodes": route_nodes,
+        "coordinates": route_coordinates,
+        "total_length_m": round(route_result["total_length_m"], 2),
+        "total_length_km": round(route_result["total_length_m"] / 1000, 3),
+        "within_target_range": route_result["within_target_range"],
+        "is_suggestion": not route_result["within_target_range"],
+        "distance_error_m": round(route_result["distance_error_m"], 2),
+        "overlap_ratio": round(route_result["overlap_ratio"], 4),
+        "repeated_edge_distance_m": round(route_result["repeated_edge_distance_m"], 2),
+        "segment_lengths_m": [
+            round(length, 2) for length in route_result["segment_lengths_m"]
+        ],
+    }
+
+
 def nearest_neighbor_order(
     rows: List[pd.Series],
     start_node: int,
@@ -600,10 +650,15 @@ def generate_route(
     selected_id_set = set(str(poi_id) for poi_id in selected_poi_ids)
     group_selection_lists = []
     for group, desired_count in requested_groups.items():
-        selected_group_rows = [
-            row
-            for _, row in selected_df[selected_df["poi_group"].astype(str) == group].iterrows()
-        ]
+        if selected_df.empty:
+            selected_group_rows = []
+        else:
+            selected_group_rows = [
+                row
+                for _, row in selected_df[
+                    selected_df["poi_group"].astype(str) == group
+                ].iterrows()
+            ]
         automatic_count = desired_count - len(selected_group_rows)
         top_k = max(automatic_count, min(desired_count + 2, TOP_K_PER_GROUP))
         if desired_count >= 4:
@@ -642,6 +697,7 @@ def generate_route(
     permutations_evaluated = 0
     feasible_routes_found = 0
     best_result = None
+    route_options = []
     segment_cache = {}
 
     for grouped_combo in product(*group_selection_lists):
@@ -667,14 +723,24 @@ def generate_route(
             route_result["distance_error_m"] = abs(total_length_m - target_distance_m)
             feasible_routes_found += 1
 
+            add_route_option(route_options, route_result)
             if is_better(route_result, best_result):
                 best_result = route_result
 
     if best_result is None:
         raise RouteGenerationError("No valid route could be generated.")
 
-    route_nodes = [int(node_id) for node_id in best_result["route_nodes"]]
-    route_coordinates = [node_coordinates(graph, node_id) for node_id in route_nodes]
+    if not route_options:
+        route_options = [best_result]
+
+    serialized_options = [
+        {
+            "id": index + 1,
+            "route": serialize_route_result(graph, option),
+            "selected_pois": option["selected_pois"],
+        }
+        for index, option in enumerate(route_options)
+    ]
 
     return {
         "start": {
@@ -693,19 +759,9 @@ def generate_route(
             if final_node is not None and not loop_route
             else None
         ),
-        "route": {
-            "nodes": route_nodes,
-            "coordinates": route_coordinates,
-            "total_length_m": round(best_result["total_length_m"], 2),
-            "total_length_km": round(best_result["total_length_m"] / 1000, 3),
-            "within_target_range": best_result["within_target_range"],
-            "is_suggestion": not best_result["within_target_range"],
-            "distance_error_m": round(best_result["distance_error_m"], 2),
-            "overlap_ratio": round(best_result["overlap_ratio"], 4),
-            "repeated_edge_distance_m": round(best_result["repeated_edge_distance_m"], 2),
-            "segment_lengths_m": [round(length, 2) for length in best_result["segment_lengths_m"]],
-        },
-        "selected_pois": best_result["selected_pois"],
+        "route": serialized_options[0]["route"],
+        "route_options": serialized_options,
+        "selected_pois": serialized_options[0]["selected_pois"],
         "metrics": {
             "routing_algorithm": routing_algorithm,
             "distance_min_m": min_distance_m,

@@ -11,7 +11,12 @@ let routeLayer = null;
 let poiLayer = L.layerGroup().addTo(map);
 let startMarker = null;
 let endMarker = null;
+let userLocationMarker = null;
+let userAccuracyCircle = null;
 let selectionMode = null;
+let activeRouteCoordinates = [];
+let activeRouteDistances = [];
+let trackingWatchId = null;
 
 const categoryColors = {
   food: "#d95f02",
@@ -29,7 +34,14 @@ const pickStartButton = document.querySelector("#pick-start-button");
 const pickFinalButton = document.querySelector("#pick-final-button");
 const routeDistanceEl = document.querySelector("#route-distance");
 const routeFitEl = document.querySelector("#route-fit");
+const routeOptionsEl = document.querySelector("#route-options");
 const selectedPoisEl = document.querySelector("#selected-pois");
+const trackingPanel = document.querySelector("#tracking-panel");
+const trackingButton = document.querySelector("#tracking-button");
+const trackingStateEl = document.querySelector("#tracking-state");
+const trackingDistanceEl = document.querySelector("#tracking-distance");
+const trackingProgressEl = document.querySelector("#tracking-progress");
+const trackingRemainingEl = document.querySelector("#tracking-remaining");
 const poiGroupsEl = document.querySelector("#poi-groups");
 const loopRouteInput = document.querySelector("#loop-route");
 const useFinalPointInput = document.querySelector("#use-final-point");
@@ -39,6 +51,7 @@ const startLonInput = document.querySelector("#start-lon");
 const endLatInput = document.querySelector("#end-lat");
 const endLonInput = document.querySelector("#end-lon");
 let allPois = [];
+let latestRouteResponse = null;
 
 function colorForGroup(group) {
   return categoryColors[group] || defaultCategoryColor;
@@ -110,6 +123,172 @@ function setEndMarker(lat, lon) {
     .addTo(map);
 }
 
+function formatDistance(meters) {
+  if (!Number.isFinite(meters)) {
+    return "--";
+  }
+  if (meters >= 1000) {
+    return `${(meters / 1000).toFixed(2)} km`;
+  }
+  return `${Math.round(meters)} m`;
+}
+
+function buildRouteDistances(coordinates) {
+  const distances = [0];
+  for (let index = 1; index < coordinates.length; index += 1) {
+    const previous = coordinates[index - 1];
+    const current = coordinates[index];
+    distances.push(
+      distances[index - 1] + map.distance([previous.lat, previous.lon], [current.lat, current.lon])
+    );
+  }
+  return distances;
+}
+
+function projectPointToSegment(point, segmentStart, segmentEnd) {
+  const latScale = 111320;
+  const lonScale = 111320 * Math.cos((point.lat * Math.PI) / 180);
+  const px = (point.lon - segmentStart.lon) * lonScale;
+  const py = (point.lat - segmentStart.lat) * latScale;
+  const vx = (segmentEnd.lon - segmentStart.lon) * lonScale;
+  const vy = (segmentEnd.lat - segmentStart.lat) * latScale;
+  const segmentLengthSq = vx * vx + vy * vy;
+  const t = segmentLengthSq === 0 ? 0 : Math.max(0, Math.min(1, (px * vx + py * vy) / segmentLengthSq));
+  const projectedLat = segmentStart.lat + (segmentEnd.lat - segmentStart.lat) * t;
+  const projectedLon = segmentStart.lon + (segmentEnd.lon - segmentStart.lon) * t;
+  return {
+    t,
+    lat: projectedLat,
+    lon: projectedLon,
+    distance_m: map.distance([point.lat, point.lon], [projectedLat, projectedLon]),
+  };
+}
+
+function nearestRouteProgress(lat, lon) {
+  if (activeRouteCoordinates.length < 2) {
+    return null;
+  }
+
+  const point = { lat, lon };
+  let nearest = null;
+  for (let index = 1; index < activeRouteCoordinates.length; index += 1) {
+    const segmentStart = activeRouteCoordinates[index - 1];
+    const segmentEnd = activeRouteCoordinates[index];
+    const projection = projectPointToSegment(point, segmentStart, segmentEnd);
+    const segmentLength =
+      activeRouteDistances[index] - activeRouteDistances[index - 1];
+    const traveled_m = activeRouteDistances[index - 1] + segmentLength * projection.t;
+    const candidate = {
+      ...projection,
+      traveled_m,
+    };
+    if (!nearest || candidate.distance_m < nearest.distance_m) {
+      nearest = candidate;
+    }
+  }
+  return nearest;
+}
+
+function resetTrackingMetrics() {
+  trackingStateEl.textContent = "Stopped";
+  trackingDistanceEl.textContent = "--";
+  trackingProgressEl.textContent = "--";
+  trackingRemainingEl.textContent = "--";
+}
+
+function stopTracking() {
+  if (trackingWatchId !== null) {
+    navigator.geolocation.clearWatch(trackingWatchId);
+    trackingWatchId = null;
+  }
+  trackingButton.textContent = "Start tracking";
+  resetTrackingMetrics();
+  if (userLocationMarker) {
+    map.removeLayer(userLocationMarker);
+    userLocationMarker = null;
+  }
+  if (userAccuracyCircle) {
+    map.removeLayer(userAccuracyCircle);
+    userAccuracyCircle = null;
+  }
+}
+
+function updateUserLocation(position) {
+  const lat = position.coords.latitude;
+  const lon = position.coords.longitude;
+  const accuracy = position.coords.accuracy;
+  const routeProgress = nearestRouteProgress(lat, lon);
+  const totalDistance = activeRouteDistances[activeRouteDistances.length - 1] || 0;
+
+  if (!userLocationMarker) {
+    userLocationMarker = L.circleMarker([lat, lon], {
+      radius: 8,
+      color: "#0f5db8",
+      fillColor: "#2d6cdf",
+      fillOpacity: 1,
+      weight: 3,
+    })
+      .bindPopup("You")
+      .addTo(map);
+  } else {
+    userLocationMarker.setLatLng([lat, lon]);
+  }
+
+  if (!userAccuracyCircle) {
+    userAccuracyCircle = L.circle([lat, lon], {
+      radius: accuracy || 0,
+      color: "#2d6cdf",
+      fillColor: "#2d6cdf",
+      fillOpacity: 0.12,
+      weight: 1,
+    }).addTo(map);
+  } else {
+    userAccuracyCircle.setLatLng([lat, lon]);
+    userAccuracyCircle.setRadius(accuracy || 0);
+  }
+
+  if (!routeProgress || totalDistance === 0) {
+    trackingStateEl.textContent = "Tracking";
+    return;
+  }
+
+  const remaining_m = Math.max(0, totalDistance - routeProgress.traveled_m);
+  const progress = Math.max(0, Math.min(100, (routeProgress.traveled_m / totalDistance) * 100));
+  trackingStateEl.textContent = routeProgress.distance_m > 50 ? "Off route" : "On route";
+  trackingDistanceEl.textContent = formatDistance(routeProgress.distance_m);
+  trackingProgressEl.textContent = `${Math.round(progress)}%`;
+  trackingRemainingEl.textContent = formatDistance(remaining_m);
+}
+
+function startTracking() {
+  if (trackingWatchId !== null) {
+    stopTracking();
+    return;
+  }
+  if (!navigator.geolocation) {
+    setStatus("Live tracking is not available in this browser.", true);
+    return;
+  }
+  if (activeRouteCoordinates.length < 2) {
+    setStatus("Generate a route before starting live tracking.", true);
+    return;
+  }
+
+  trackingStateEl.textContent = "Starting";
+  trackingButton.textContent = "Stop tracking";
+  trackingWatchId = navigator.geolocation.watchPosition(
+    (position) => {
+      updateUserLocation(position);
+      setStatus("Live tracking active.");
+    },
+    () => {
+      stopTracking();
+      setStatus("Could not get live location. Check browser permission.", true);
+    },
+    { enableHighAccuracy: true, maximumAge: 2000, timeout: 12000 }
+  );
+}
+
 function checkedPoiPreferences() {
   const preferences = {};
   poiGroupsEl.querySelectorAll("input[type='number']").forEach((input) => {
@@ -136,7 +315,9 @@ function updatePoiOptionStates() {
     const group = groupEl.dataset.group;
     const maxSelected = poiCountForGroup(group);
     const chooseInput = groupEl.querySelector(".poi-choose-toggle");
-    const checkboxes = Array.from(groupEl.querySelectorAll("input[type='checkbox']"));
+    const checkboxes = Array.from(
+      groupEl.querySelectorAll(".poi-option-list input[type='checkbox']")
+    );
     const isChoosing = chooseInput?.checked && maxSelected > 0;
 
     groupEl.classList.toggle("choosing", Boolean(isChoosing));
@@ -267,9 +448,28 @@ function buildPayload() {
   };
 }
 
-function drawRoute(data) {
+function selectedRouteOption(data, optionIndex = 0) {
+  if (Array.isArray(data.route_options) && data.route_options[optionIndex]) {
+    return data.route_options[optionIndex];
+  }
+  return {
+    id: 1,
+    route: data.route,
+    selected_pois: data.selected_pois,
+  };
+}
+
+function drawRoute(data, optionIndex = 0) {
   refreshMapSize();
-  const latLngs = data.route.coordinates.map((point) => [point.lat, point.lon]);
+  const option = selectedRouteOption(data, optionIndex);
+  const route = option.route;
+  const selectedPois = option.selected_pois;
+  const latLngs = route.coordinates.map((point) => [point.lat, point.lon]);
+  stopTracking();
+  activeRouteCoordinates = route.coordinates;
+  activeRouteDistances = buildRouteDistances(activeRouteCoordinates);
+  trackingPanel.classList.remove("hidden");
+  resetTrackingMetrics();
 
   if (routeLayer) {
     map.removeLayer(routeLayer);
@@ -297,7 +497,7 @@ function drawRoute(data) {
     endMarker = null;
   }
 
-  data.selected_pois.forEach((poi, index) => {
+  selectedPois.forEach((poi, index) => {
     L.marker([poi.lat, poi.lon], {
       icon: poiIcon(poi.poi_group, index + 1),
     })
@@ -308,14 +508,52 @@ function drawRoute(data) {
   map.fitBounds(routeLayer.getBounds().pad(0.18));
 }
 
-function renderSummary(data) {
-  routeDistanceEl.textContent = `${data.route.total_length_km.toFixed(2)} km`;
-  routeFitEl.textContent = data.route.within_target_range
+function renderRouteOptions(data, selectedIndex = 0) {
+  const options = Array.isArray(data.route_options) && data.route_options.length > 0
+    ? data.route_options
+    : [selectedRouteOption(data, 0)];
+
+  routeOptionsEl.innerHTML = "";
+  routeOptionsEl.classList.toggle("hidden", options.length <= 1);
+  options.forEach((option, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "route-option-button";
+    button.classList.toggle("active", index === selectedIndex);
+    const poiNames = option.selected_pois.map((poi) => poi.name).join(", ");
+    const title = document.createElement("strong");
+    title.textContent = `Route ${index + 1}`;
+    const meta = document.createElement("span");
+    meta.textContent = `${option.route.total_length_km.toFixed(2)} km · ${
+      option.route.within_target_range ? "inside range" : "suggestion"
+    }`;
+    const pois = document.createElement("small");
+    pois.textContent = poiNames;
+    button.appendChild(title);
+    button.appendChild(meta);
+    button.appendChild(pois);
+    button.addEventListener("click", () => {
+      drawRoute(data, index);
+      renderSummary(data, index);
+    });
+    routeOptionsEl.appendChild(button);
+  });
+}
+
+function renderSummary(data, optionIndex = 0) {
+  const option = selectedRouteOption(data, optionIndex);
+  const route = option.route;
+  const selectedPois = option.selected_pois;
+
+  routeDistanceEl.textContent = `${route.total_length_km.toFixed(2)} km`;
+  routeFitEl.textContent = route.within_target_range
     ? "Inside requested range"
-    : `Suggestion: closest route is ${data.route.total_length_km.toFixed(2)} km`;
+    : `Suggestion: closest route is ${route.total_length_km.toFixed(2)} km`;
+
+  renderRouteOptions(data, optionIndex);
 
   selectedPoisEl.innerHTML = "";
-  data.selected_pois.forEach((poi) => {
+  selectedPois.forEach((poi) => {
     const item = document.createElement("li");
     item.innerHTML = `
       <span class="poi-name">
@@ -404,6 +642,8 @@ poiGroupsEl.addEventListener("change", (event) => {
   updatePoiOptionStates();
 });
 
+trackingButton.addEventListener("click", startTracking);
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   generateButton.disabled = true;
@@ -430,8 +670,9 @@ form.addEventListener("submit", async (event) => {
       throw new Error(data?.detail || "Route generation failed.");
     }
 
-    drawRoute(data);
-    renderSummary(data);
+    latestRouteResponse = data;
+    drawRoute(latestRouteResponse, 0);
+    renderSummary(latestRouteResponse, 0);
     setStatus(
       `Evaluated ${data.metrics.route_orders_evaluated} route orders from ${data.metrics.candidate_count} candidate POIs. Reused ${Math.round(data.route.repeated_edge_distance_m)} m of road.`
     );
