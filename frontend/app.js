@@ -38,6 +38,7 @@ const startLatInput = document.querySelector("#start-lat");
 const startLonInput = document.querySelector("#start-lon");
 const endLatInput = document.querySelector("#end-lat");
 const endLonInput = document.querySelector("#end-lon");
+let allPois = [];
 
 function colorForGroup(group) {
   return categoryColors[group] || defaultCategoryColor;
@@ -119,8 +120,126 @@ function checkedPoiPreferences() {
   return preferences;
 }
 
-function selectedAlgorithm() {
-  return form.querySelector("input[name='routing_algorithm']:checked").value;
+function selectedPoiIds() {
+  return Array.from(poiGroupsEl.querySelectorAll(".poi-option-list input[type='checkbox']:checked")).map(
+    (input) => input.value
+  );
+}
+
+function poiCountForGroup(group) {
+  const input = poiGroupsEl.querySelector(`input[data-group="${group}"]`);
+  return input ? Number(input.value || 0) : 0;
+}
+
+function updatePoiOptionStates() {
+  poiGroupsEl.querySelectorAll(".poi-option-group").forEach((groupEl) => {
+    const group = groupEl.dataset.group;
+    const maxSelected = poiCountForGroup(group);
+    const chooseInput = groupEl.querySelector(".poi-choose-toggle");
+    const checkboxes = Array.from(groupEl.querySelectorAll("input[type='checkbox']"));
+    const isChoosing = chooseInput?.checked && maxSelected > 0;
+
+    groupEl.classList.toggle("choosing", Boolean(isChoosing));
+
+    if (!isChoosing) {
+      checkboxes.forEach((checkbox) => {
+        checkbox.checked = false;
+        checkbox.disabled = true;
+      });
+    } else {
+      let keptSelected = 0;
+      checkboxes.forEach((checkbox) => {
+        if (!checkbox.checked) {
+          return;
+        }
+        if (keptSelected >= maxSelected) {
+          checkbox.checked = false;
+          return;
+        }
+        keptSelected += 1;
+      });
+      const selectedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+      checkboxes.forEach((checkbox) => {
+        checkbox.disabled = !checkbox.checked && selectedCount >= maxSelected;
+      });
+    }
+
+    const selectedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+    const countEl = groupEl.querySelector(".poi-option-count");
+    if (countEl) {
+      countEl.textContent = `${selectedCount}/${maxSelected}`;
+    }
+    if (chooseInput) {
+      chooseInput.disabled = maxSelected <= 0;
+      if (maxSelected <= 0) {
+        chooseInput.checked = false;
+      }
+    }
+  });
+}
+
+function createPoiOptionGroup(group, pois) {
+  const groupEl = document.createElement("div");
+  groupEl.className = "poi-option-group";
+  groupEl.dataset.group = group;
+
+  const chooseLabel = document.createElement("label");
+  chooseLabel.className = "poi-choose-row";
+  const chooseInput = document.createElement("input");
+  chooseInput.type = "checkbox";
+  chooseInput.className = "poi-choose-toggle";
+  chooseInput.dataset.group = group;
+  const chooseText = document.createElement("span");
+  chooseText.textContent = "I want to choose";
+  const chooseCount = document.createElement("span");
+  chooseCount.className = "poi-option-count";
+  chooseCount.textContent = `0/${poiCountForGroup(group)}`;
+  chooseLabel.appendChild(chooseInput);
+  chooseLabel.appendChild(chooseText);
+  chooseLabel.appendChild(chooseCount);
+  groupEl.appendChild(chooseLabel);
+
+  const list = document.createElement("div");
+  list.className = "poi-option-list";
+  pois.forEach((poi) => {
+    const label = document.createElement("label");
+    label.className = "poi-option-row";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = poi.poi_id;
+    checkbox.dataset.group = poi.poi_group;
+    const name = document.createElement("span");
+    name.textContent = poi.name;
+    label.appendChild(checkbox);
+    label.appendChild(name);
+    list.appendChild(label);
+  });
+  groupEl.appendChild(list);
+
+  return groupEl;
+}
+
+function renderPoiOptionsInGroups() {
+  const groupInputs = Array.from(poiGroupsEl.querySelectorAll("input[data-group]"));
+  if (groupInputs.length === 0 || allPois.length === 0) {
+    return;
+  }
+
+  groupInputs.forEach((groupInput) => {
+    const group = groupInput.dataset.group;
+    const row = groupInput.closest(".poi-count-row");
+    if (!row || row.nextElementSibling?.dataset?.group === group) {
+      return;
+    }
+
+    const pois = allPois.filter((poi) => poi.poi_group === group);
+    if (pois.length === 0) {
+      return;
+    }
+
+    row.insertAdjacentElement("afterend", createPoiOptionGroup(group, pois));
+  });
+  updatePoiOptionStates();
 }
 
 function buildPayload() {
@@ -140,7 +259,7 @@ function buildPayload() {
     min_distance_km: Number(document.querySelector("#min-distance").value),
     max_distance_km: Number(document.querySelector("#max-distance").value),
     poi_preferences: poiPreferences,
-    routing_algorithm: selectedAlgorithm(),
+    selected_poi_ids: selectedPoiIds(),
     elevation_preference: "none",
     loop_route: loopRouteInput.checked,
     end_lat: useFinalPoint ? Number(endLatInput.value) : null,
@@ -235,15 +354,55 @@ async function loadPoiGroups() {
       input.max = "10";
       input.value = preferred.has(group) ? "1" : "0";
       input.dataset.group = group;
+      input.addEventListener("input", updatePoiOptionStates);
       label.appendChild(labelText);
       label.appendChild(input);
       poiGroupsEl.appendChild(label);
     });
+    renderPoiOptionsInGroups();
     refreshMapSize();
   } catch {
     setStatus("Could not load POI groups. Using defaults.", true);
   }
 }
+
+async function loadPoiOptions() {
+  try {
+    const response = await fetch("/api/pois");
+    if (!response.ok) {
+      return;
+    }
+    const data = await response.json();
+    allPois = Array.isArray(data.pois) ? data.pois : [];
+    renderPoiOptionsInGroups();
+  } catch {
+    setStatus("Could not load POI options.", true);
+  }
+}
+
+poiGroupsEl.addEventListener("change", (event) => {
+  if (event.target.matches(".poi-choose-toggle")) {
+    updatePoiOptionStates();
+    return;
+  }
+
+  if (!event.target.matches("input[type='checkbox']")) {
+    return;
+  }
+
+  const group = event.target.dataset.group;
+  const maxSelected = poiCountForGroup(group);
+  const selectedCount = poiGroupsEl.querySelectorAll(
+    `.poi-option-list input[data-group="${group}"]:checked`
+  ).length;
+
+  if (selectedCount > maxSelected) {
+    event.target.checked = false;
+    setStatus(`You can select at most ${maxSelected} ${group.replaceAll("_", " ")} POIs.`, true);
+  }
+
+  updatePoiOptionStates();
+});
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -360,6 +519,7 @@ map.on("click", (event) => {
 });
 
 loadPoiGroups();
+loadPoiOptions();
 updateFinalPointVisibility();
 window.addEventListener("load", refreshMapSize);
 window.addEventListener("resize", refreshMapSize);

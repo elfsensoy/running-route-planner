@@ -9,6 +9,7 @@ from src.backend.schemas import RouteRequest, RouteResponse
 from src.routing.route_service import (
     RouteGenerationError,
     available_poi_groups,
+    available_pois,
     generate_route,
 )
 
@@ -41,6 +42,11 @@ def poi_groups():
     return {"groups": available_poi_groups()}
 
 
+@app.get("/api/pois")
+def pois():
+    return {"pois": available_pois()}
+
+
 @app.post("/api/routes/generate", response_model=RouteResponse)
 def create_route(payload: RouteRequest):
     try:
@@ -50,7 +56,7 @@ def create_route(payload: RouteRequest):
             min_distance_km=payload.min_distance_km,
             max_distance_km=payload.max_distance_km,
             poi_preferences=payload.poi_preferences,
-            routing_algorithm=payload.routing_algorithm,
+            selected_poi_ids=payload.selected_poi_ids,
             loop_route=payload.loop_route,
             end_lat=payload.end_lat,
             end_lon=payload.end_lon,

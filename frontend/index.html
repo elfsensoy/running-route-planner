@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Running Route Planner</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="/static/styles.css?v=5" />
+    <link rel="stylesheet" href="/static/styles.css?v=7" />
   </head>
   <body>
     <main class="app-shell">
@@ -89,10 +89,6 @@
               </label>
             </div>
             <button id="pick-final-button" type="button" class="secondary-button hidden">Pick final on map</button>
-            <div class="segmented">
-              <label><input type="radio" name="routing_algorithm" value="astar" checked /> A*</label>
-              <label><input type="radio" name="routing_algorithm" value="dijkstra" /> Dijkstra</label>
-            </div>
           </section>
 
           <button id="generate-button" type="submit">Generate route</button>
@@ -118,6 +114,6 @@
     </main>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="/static/app.js?v=5"></script>
+    <script src="/static/app.js?v=8"></script>
   </body>
 </html>

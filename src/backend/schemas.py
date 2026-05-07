@@ -9,7 +9,7 @@ class RouteRequest(BaseModel):
     min_distance_km: float = Field(..., gt=0)
     max_distance_km: float = Field(..., gt=0)
     poi_preferences: Dict[str, int] = Field(default_factory=dict)
-    routing_algorithm: Literal["astar", "dijkstra"] = "astar"
+    selected_poi_ids: List[str] = Field(default_factory=list)
     elevation_preference: Literal["low", "medium", "high", "none"] = "none"
     loop_route: bool = True
     end_lat: Optional[float] = Field(default=None, ge=-90, le=90)

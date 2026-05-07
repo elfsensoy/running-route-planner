@@ -159,6 +159,64 @@ input:focus {
   text-align: center;
 }
 
+.poi-option-group {
+  display: grid;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.poi-choose-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.poi-option-count {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.poi-option-list {
+  display: none;
+  max-height: 180px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+}
+
+.poi-option-group.choosing .poi-option-list {
+  display: grid;
+}
+
+.poi-option-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 10px;
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.poi-option-row + .poi-option-row {
+  border-top: 1px solid rgba(216, 222, 216, 0.7);
+}
+
+.poi-option-row span {
+  overflow-wrap: anywhere;
+}
+
+.poi-option-row:has(input:disabled) {
+  color: var(--muted);
+  background: #f4f6f1;
+}
+
 .poi-marker {
   display: grid;
   place-items: center;

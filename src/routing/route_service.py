@@ -56,6 +56,29 @@ def available_poi_groups() -> List[str]:
     return sorted(load_pois()["poi_group"].dropna().unique().tolist())
 
 
+def available_pois() -> List[Dict]:
+    pois_df = load_pois()
+    pois_df = pois_df[
+        pois_df["name"].notna()
+        & (pois_df["name"].astype(str).str.strip() != "")
+        & (pois_df["name"].astype(str).str.strip() != "Unnamed POI")
+        & pois_df["poi_group"].notna()
+    ].copy()
+    pois_df["name"] = pois_df["name"].astype(str).str.strip()
+    pois_df = pois_df.sort_values(["poi_group", "name"], ascending=True)
+
+    return [
+        {
+            "poi_id": str(row["poi_id"]),
+            "name": str(row["name"]),
+            "poi_group": str(row["poi_group"]),
+            "lat": float(row["lat"]),
+            "lon": float(row["lon"]),
+        }
+        for _, row in pois_df.iterrows()
+    ]
+
+
 def node_coordinates(graph: nx.MultiDiGraph, node_id: int) -> Dict[str, float]:
     node = graph.nodes[node_id]
     return {
@@ -190,6 +213,38 @@ def build_candidate_pois(
         candidate_parts.append(group_candidates)
 
     return pd.concat(candidate_parts, ignore_index=True)
+
+
+def build_selected_pois(
+    graph: nx.MultiDiGraph,
+    pois_df: pd.DataFrame,
+    selected_poi_ids: List[str],
+) -> pd.DataFrame:
+    if not selected_poi_ids:
+        return pd.DataFrame()
+
+    unique_ids = list(dict.fromkeys(str(poi_id) for poi_id in selected_poi_ids))
+    selected_df = pois_df[pois_df["poi_id"].astype(str).isin(unique_ids)].copy()
+    found_ids = set(selected_df["poi_id"].astype(str))
+    missing_ids = set(unique_ids) - found_ids
+    if missing_ids:
+        raise RouteGenerationError(f"Selected POIs were not found: {sorted(missing_ids)}")
+
+    selected_df = selected_df[
+        selected_df["name"].notna()
+        & (selected_df["name"].astype(str).str.strip() != "")
+        & (selected_df["name"].astype(str).str.strip() != "Unnamed POI")
+    ].copy()
+    if len(selected_df) != len(unique_ids):
+        raise RouteGenerationError("One or more selected POIs are not routeable.")
+
+    selected_df["access_node"] = selected_df.apply(
+        lambda row: choose_poi_access_node(row, graph),
+        axis=1,
+    )
+    selected_df = selected_df.dropna(subset=["access_node"]).copy()
+    selected_df["access_node"] = selected_df["access_node"].astype(int)
+    return selected_df
 
 
 def select_top_k_per_group(df: pd.DataFrame, group_name: str, k: int) -> pd.DataFrame:
@@ -465,6 +520,7 @@ def generate_route(
     min_distance_km: float,
     max_distance_km: float,
     poi_preferences: Dict[str, int],
+    selected_poi_ids: Optional[List[str]] = None,
     routing_algorithm: str = "astar",
     loop_route: bool = True,
     end_lat: Optional[float] = None,
@@ -493,8 +549,27 @@ def generate_route(
             )
 
     routing_algorithm = routing_algorithm.lower()
+    selected_poi_ids = selected_poi_ids or []
     graph = load_graph()
     pois_df = load_pois()
+    selected_df = build_selected_pois(graph, pois_df, selected_poi_ids)
+
+    selected_counts = (
+        selected_df["poi_group"].astype(str).value_counts().to_dict()
+        if not selected_df.empty
+        else {}
+    )
+    for group, selected_count in selected_counts.items():
+        requested_count = requested_groups.get(group, 0)
+        if requested_count == 0:
+            raise RouteGenerationError(
+                f"Selected POI group '{group}' has count 0. Increase its count first."
+            )
+        if selected_count > requested_count:
+            raise RouteGenerationError(
+                f"Selected {selected_count} POIs for '{group}', "
+                f"but only {requested_count} were requested."
+            )
 
     start_node = ox.distance.nearest_nodes(graph, X=start_lon, Y=start_lat)
     try:
@@ -522,9 +597,15 @@ def generate_route(
     else:
         final_node = None
 
-    group_candidate_lists = {}
+    selected_id_set = set(str(poi_id) for poi_id in selected_poi_ids)
+    group_selection_lists = []
     for group, desired_count in requested_groups.items():
-        top_k = max(desired_count, min(desired_count + 2, TOP_K_PER_GROUP))
+        selected_group_rows = [
+            row
+            for _, row in selected_df[selected_df["poi_group"].astype(str) == group].iterrows()
+        ]
+        automatic_count = desired_count - len(selected_group_rows)
+        top_k = max(automatic_count, min(desired_count + 2, TOP_K_PER_GROUP))
         if desired_count >= 4:
             top_group_df = select_diverse_candidates_per_group(
                 candidates_df,
@@ -534,14 +615,24 @@ def generate_route(
             )
         else:
             top_group_df = select_top_k_per_group(candidates_df, group, top_k)
+        top_group_df = top_group_df[
+            ~top_group_df["poi_id"].astype(str).isin(selected_id_set)
+        ].copy()
         if top_group_df.empty:
-            raise RouteGenerationError(f"No candidates found for group: {group}")
-        if len(top_group_df) < desired_count:
+            if automatic_count > 0:
+                raise RouteGenerationError(f"No candidates found for group: {group}")
+        if len(top_group_df) < automatic_count:
             raise RouteGenerationError(
                 f"Only {len(top_group_df)} candidates found for group '{group}', "
-                f"but {desired_count} were requested."
+                f"but {automatic_count} more were needed."
             )
-        group_candidate_lists[group] = [row for _, row in top_group_df.iterrows()]
+        automatic_rows = [row for _, row in top_group_df.iterrows()]
+        group_selection_lists.append(
+            [
+                tuple(selected_group_rows) + automatic_combo
+                for automatic_combo in combinations(automatic_rows, automatic_count)
+            ]
+        )
 
     min_distance_m = min_distance_km * 1000
     max_distance_m = max_distance_km * 1000
@@ -552,11 +643,6 @@ def generate_route(
     feasible_routes_found = 0
     best_result = None
     segment_cache = {}
-
-    group_selection_lists = [
-        list(combinations(group_candidate_lists[group], requested_groups[group]))
-        for group in group_candidate_lists
-    ]
 
     for grouped_combo in product(*group_selection_lists):
         combinations_evaluated += 1
