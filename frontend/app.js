@@ -35,6 +35,11 @@ const pickFinalButton = document.querySelector("#pick-final-button");
 const routeDistanceEl = document.querySelector("#route-distance");
 const routeFitEl = document.querySelector("#route-fit");
 const routeOptionsEl = document.querySelector("#route-options");
+const elevationSummaryEl = document.querySelector("#elevation-summary");
+const elevationPreferenceEl = document.querySelector("#elevation-preference");
+const elevationGainEl = document.querySelector("#elevation-gain");
+const elevationAverageSlopeEl = document.querySelector("#elevation-average-slope");
+const elevationMaxSlopeEl = document.querySelector("#elevation-max-slope");
 const selectedPoisEl = document.querySelector("#selected-pois");
 const trackingPanel = document.querySelector("#tracking-panel");
 const trackingButton = document.querySelector("#tracking-button");
@@ -441,7 +446,7 @@ function buildPayload() {
     max_distance_km: Number(document.querySelector("#max-distance").value),
     poi_preferences: poiPreferences,
     selected_poi_ids: selectedPoiIds(),
-    elevation_preference: "none",
+    elevation_preference: form.querySelector("input[name='elevation_preference']:checked").value,
     loop_route: loopRouteInput.checked,
     end_lat: useFinalPoint ? Number(endLatInput.value) : null,
     end_lon: useFinalPoint ? Number(endLonInput.value) : null,
@@ -524,9 +529,10 @@ function renderRouteOptions(data, selectedIndex = 0) {
     const title = document.createElement("strong");
     title.textContent = `Route ${index + 1}`;
     const meta = document.createElement("span");
+    const elevation = option.route.elevation;
     meta.textContent = `${option.route.total_length_km.toFixed(2)} km · ${
       option.route.within_target_range ? "inside range" : "suggestion"
-    }`;
+    } · ${Math.round(elevation?.total_gain_m || 0)} m gain`;
     const pois = document.createElement("small");
     pois.textContent = poiNames;
     button.appendChild(title);
@@ -549,6 +555,17 @@ function renderSummary(data, optionIndex = 0) {
   routeFitEl.textContent = route.within_target_range
     ? "Inside requested range"
     : `Suggestion: closest route is ${route.total_length_km.toFixed(2)} km`;
+
+  const elevation = route.elevation;
+  if (elevation) {
+    elevationSummaryEl.classList.remove("hidden");
+    elevationPreferenceEl.textContent = elevation.preference;
+    elevationGainEl.textContent = `${elevation.total_gain_m.toFixed(1)} m`;
+    elevationAverageSlopeEl.textContent = `${(elevation.average_abs_slope * 100).toFixed(1)}%`;
+    elevationMaxSlopeEl.textContent = `${(elevation.max_abs_slope * 100).toFixed(1)}%`;
+  } else {
+    elevationSummaryEl.classList.add("hidden");
+  }
 
   renderRouteOptions(data, optionIndex);
 

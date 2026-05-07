@@ -12,6 +12,7 @@ import pandas as pd
 BASE_DIR = Path(__file__).resolve().parents[2]
 GRAPH_PATH = BASE_DIR / "data" / "raw" / "fatih_walk.graphml"
 POIS_PATH = BASE_DIR / "data" / "processed" / "fatih_pois_edge_mapped.csv"
+EDGE_ELEVATION_PATH = BASE_DIR / "data" / "processed" / "fatih_edges_enriched.csv"
 
 CANDIDATE_DISTANCE_RATIO = 0.75
 CANDIDATE_MULTIPLIER = 10
@@ -31,7 +32,27 @@ class RouteGenerationError(ValueError):
 
 @lru_cache(maxsize=1)
 def load_graph() -> nx.MultiDiGraph:
-    return ox.load_graphml(GRAPH_PATH)
+    graph = ox.load_graphml(GRAPH_PATH)
+    if EDGE_ELEVATION_PATH.exists():
+        edges_df = pd.read_csv(EDGE_ELEVATION_PATH)
+        elevation_cols = [
+            "u_elevation",
+            "v_elevation",
+            "elevation_dif",
+            "slope",
+            "abs_slope",
+        ]
+        for _, row in edges_df.iterrows():
+            u = int(row["u"])
+            v = int(row["v"])
+            key = int(row["key"])
+            if not graph.has_edge(u, v, key):
+                continue
+            for col in elevation_cols:
+                value = row.get(col)
+                if pd.notna(value):
+                    graph.edges[u, v, key][col] = float(value)
+    return graph
 
 
 @lru_cache(maxsize=1)
@@ -96,6 +117,80 @@ def path_length(graph: nx.MultiDiGraph, path_nodes: List[int]) -> float:
             raise RouteGenerationError(f"No edge found between route nodes {u} and {v}.")
         total += min(float(data.get("length", float("inf"))) for data in edge_data.values())
     return total
+
+
+def safe_float(value, default: float = 0.0) -> float:
+    try:
+        if value is None or pd.isna(value):
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def best_edge_data(graph: nx.MultiDiGraph, u: int, v: int) -> Dict:
+    edge_data = graph.get_edge_data(u, v)
+    if edge_data is None:
+        return {}
+    return min(
+        edge_data.values(),
+        key=lambda data: safe_float(data.get("length"), float("inf")),
+    )
+
+
+def route_elevation_metrics(graph: nx.MultiDiGraph, route_nodes: List[int]) -> Dict:
+    total_gain_m = 0.0
+    total_length_m = 0.0
+    weighted_abs_slope = 0.0
+    max_abs_slope = 0.0
+
+    for u, v in zip(route_nodes[:-1], route_nodes[1:]):
+        data = best_edge_data(graph, int(u), int(v))
+        edge_length_m = safe_float(data.get("length"))
+        elevation_diff = safe_float(data.get("elevation_dif"))
+        if "elevation_dif" not in data:
+            elevation_diff = safe_float(data.get("v_elevation")) - safe_float(
+                data.get("u_elevation")
+            )
+        abs_slope = safe_float(data.get("abs_slope"), abs(safe_float(data.get("slope"))))
+
+        if elevation_diff > 0:
+            total_gain_m += elevation_diff
+        if edge_length_m > 0:
+            total_length_m += edge_length_m
+            weighted_abs_slope += abs_slope * edge_length_m
+        max_abs_slope = max(max_abs_slope, abs_slope)
+
+    average_abs_slope = weighted_abs_slope / total_length_m if total_length_m else 0.0
+    normalized_gain = total_gain_m / total_length_m if total_length_m else 0.0
+    return {
+        "total_gain_m": total_gain_m,
+        "average_abs_slope": average_abs_slope,
+        "max_abs_slope": max_abs_slope,
+        "normalized_gain": normalized_gain,
+    }
+
+
+def elevation_preference_score(route_result: Dict, elevation_preference: str) -> float:
+    elevation = route_result.get("elevation", {})
+    normalized_gain = float(elevation.get("normalized_gain", 0.0))
+    average_abs_slope = float(elevation.get("average_abs_slope", 0.0))
+    max_abs_slope = float(elevation.get("max_abs_slope", 0.0))
+    difficulty = normalized_gain * 1.5 + average_abs_slope + max_abs_slope * 0.25
+
+    if elevation_preference == "low":
+        return difficulty
+    if elevation_preference == "high":
+        return -difficulty
+
+    target_gain = 0.025
+    target_average_slope = 0.035
+    target_max_slope = 0.08
+    return (
+        abs(normalized_gain - target_gain) * 1.5
+        + abs(average_abs_slope - target_average_slope)
+        + abs(max_abs_slope - target_max_slope) * 0.25
+    )
 
 
 def heuristic_distance(graph: nx.MultiDiGraph, node1: int, node2: int) -> float:
@@ -352,12 +447,14 @@ def build_loop_for_order(
 
     route_nodes = merge_segments(all_segments)
     overlap = route_overlap_metrics(graph, route_nodes)
+    elevation = route_elevation_metrics(graph, route_nodes)
 
     return {
         "route_nodes": route_nodes,
         "total_length_m": sum(segment_lengths),
         "segment_lengths_m": segment_lengths,
         **overlap,
+        "elevation": elevation,
         "selected_pois": [
             {
                 "poi_id": str(row["poi_id"]),
@@ -415,7 +512,11 @@ def route_overlap_metrics(graph: nx.MultiDiGraph, route_nodes: List[int]) -> Dic
     }
 
 
-def is_better(candidate: Dict, current_best: Optional[Dict]) -> bool:
+def is_better(
+    candidate: Dict,
+    current_best: Optional[Dict],
+    elevation_preference: str = "medium",
+) -> bool:
     if current_best is None:
         return True
     if candidate["within_target_range"] and not current_best["within_target_range"]:
@@ -433,6 +534,11 @@ def is_better(candidate: Dict, current_best: Optional[Dict]) -> bool:
     if current_best["distance_error_m"] < candidate["distance_error_m"] - 250:
         return False
 
+    candidate_elevation_score = elevation_preference_score(candidate, elevation_preference)
+    current_elevation_score = elevation_preference_score(current_best, elevation_preference)
+    if abs(candidate_elevation_score - current_elevation_score) > 0.002:
+        return candidate_elevation_score < current_elevation_score
+
     overlap_delta = candidate["overlap_ratio"] - current_best["overlap_ratio"]
     if abs(overlap_delta) > OVERLAP_RATIO_TOLERANCE:
         return overlap_delta < 0
@@ -448,25 +554,32 @@ def route_similarity_key(route_result: Dict) -> tuple:
     return poi_ids, rounded_length
 
 
-def add_route_option(route_options: List[Dict], route_result: Dict) -> None:
+def add_route_option(
+    route_options: List[Dict],
+    route_result: Dict,
+    elevation_preference: str,
+) -> None:
     candidate_key = route_similarity_key(route_result)
     for index, existing in enumerate(route_options):
         if route_similarity_key(existing) != candidate_key:
             continue
-        if is_better(route_result, existing):
+        if is_better(route_result, existing, elevation_preference):
             route_options[index] = route_result
-            route_options.sort(key=route_rank_key)
+            route_options.sort(
+                key=lambda option: route_rank_key(option, elevation_preference)
+            )
         return
 
     route_options.append(route_result)
-    route_options.sort(key=route_rank_key)
+    route_options.sort(key=lambda option: route_rank_key(option, elevation_preference))
     del route_options[ROUTE_OPTION_COUNT:]
 
 
-def route_rank_key(route_result: Dict) -> tuple:
+def route_rank_key(route_result: Dict, elevation_preference: str = "medium") -> tuple:
     return (
         0 if route_result["within_target_range"] else 1,
         route_result["distance_error_m"],
+        elevation_preference_score(route_result, elevation_preference),
         route_result["overlap_ratio"],
         route_result["total_length_m"],
     )
@@ -488,6 +601,14 @@ def serialize_route_result(graph: nx.MultiDiGraph, route_result: Dict) -> Dict:
         "segment_lengths_m": [
             round(length, 2) for length in route_result["segment_lengths_m"]
         ],
+        "elevation": {
+            "preference": route_result["elevation"]["preference"],
+            "total_gain_m": round(route_result["elevation"]["total_gain_m"], 2),
+            "average_abs_slope": round(
+                route_result["elevation"]["average_abs_slope"], 4
+            ),
+            "max_abs_slope": round(route_result["elevation"]["max_abs_slope"], 4),
+        },
     }
 
 
@@ -571,6 +692,7 @@ def generate_route(
     max_distance_km: float,
     poi_preferences: Dict[str, int],
     selected_poi_ids: Optional[List[str]] = None,
+    elevation_preference: str = "medium",
     routing_algorithm: str = "astar",
     loop_route: bool = True,
     end_lat: Optional[float] = None,
@@ -597,6 +719,12 @@ def generate_route(
                 f"This prototype supports up to {MAX_POIS_PER_GROUP} POIs per group. "
                 f"'{group}' requested {count}."
             )
+
+    elevation_preference = elevation_preference.lower()
+    if elevation_preference not in {"low", "medium", "high"}:
+        raise RouteGenerationError(
+            f"Unsupported elevation preference: {elevation_preference}"
+        )
 
     routing_algorithm = routing_algorithm.lower()
     selected_poi_ids = selected_poi_ids or []
@@ -721,10 +849,11 @@ def generate_route(
             total_length_m = route_result["total_length_m"]
             route_result["within_target_range"] = min_distance_m <= total_length_m <= max_distance_m
             route_result["distance_error_m"] = abs(total_length_m - target_distance_m)
+            route_result["elevation"]["preference"] = elevation_preference
             feasible_routes_found += 1
 
-            add_route_option(route_options, route_result)
-            if is_better(route_result, best_result):
+            add_route_option(route_options, route_result, elevation_preference)
+            if is_better(route_result, best_result, elevation_preference):
                 best_result = route_result
 
     if best_result is None:
@@ -764,6 +893,7 @@ def generate_route(
         "selected_pois": serialized_options[0]["selected_pois"],
         "metrics": {
             "routing_algorithm": routing_algorithm,
+            "elevation_preference": elevation_preference,
             "distance_min_m": min_distance_m,
             "distance_max_m": max_distance_m,
             "target_distance_m": target_distance_m,

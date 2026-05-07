@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Running Route Planner</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="/static/styles.css?v=10" />
+    <link rel="stylesheet" href="/static/styles.css?v=11" />
   </head>
   <body>
     <main class="app-shell">
@@ -43,6 +43,15 @@
                 Max km
                 <input id="max-distance" name="max_distance_km" type="number" step="0.1" min="0.5" value="5" required />
               </label>
+            </div>
+          </section>
+
+          <section>
+            <h2>Elevation Preference</h2>
+            <div class="segmented elevation-segmented">
+              <label><input type="radio" name="elevation_preference" value="low" /> Low</label>
+              <label><input type="radio" name="elevation_preference" value="medium" checked /> Medium</label>
+              <label><input type="radio" name="elevation_preference" value="high" /> High</label>
             </div>
           </section>
 
@@ -104,6 +113,24 @@
             <strong id="route-fit">Waiting</strong>
           </div>
           <div id="route-options" class="route-options hidden"></div>
+          <div id="elevation-summary" class="elevation-summary hidden">
+            <div>
+              <span class="metric-label">Elevation</span>
+              <strong id="elevation-preference">--</strong>
+            </div>
+            <div>
+              <span class="metric-label">Gain</span>
+              <strong id="elevation-gain">--</strong>
+            </div>
+            <div>
+              <span class="metric-label">Avg slope</span>
+              <strong id="elevation-average-slope">--</strong>
+            </div>
+            <div>
+              <span class="metric-label">Max slope</span>
+              <strong id="elevation-max-slope">--</strong>
+            </div>
+          </div>
           <ol id="selected-pois" class="selected-pois"></ol>
           <div id="tracking-panel" class="tracking-panel hidden">
             <button id="tracking-button" type="button" class="secondary-button">Start tracking</button>
@@ -136,6 +163,6 @@
     </main>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="/static/app.js?v=13"></script>
+    <script src="/static/app.js?v=14"></script>
   </body>
 </html>

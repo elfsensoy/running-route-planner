@@ -10,7 +10,7 @@ class RouteRequest(BaseModel):
     max_distance_km: float = Field(..., gt=0)
     poi_preferences: Dict[str, int] = Field(default_factory=dict)
     selected_poi_ids: List[str] = Field(default_factory=list)
-    elevation_preference: Literal["low", "medium", "high", "none"] = "none"
+    elevation_preference: Literal["low", "medium", "high"] = "medium"
     loop_route: bool = True
     end_lat: Optional[float] = Field(default=None, ge=-90, le=90)
     end_lon: Optional[float] = Field(default=None, ge=-180, le=180)
@@ -60,6 +60,7 @@ class RouteInfo(BaseModel):
     overlap_ratio: float
     repeated_edge_distance_m: float
     segment_lengths_m: List[float]
+    elevation: dict
 
 
 class RouteResponse(BaseModel):

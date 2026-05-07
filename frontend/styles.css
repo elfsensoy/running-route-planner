@@ -243,6 +243,10 @@ input:focus {
   gap: 8px;
 }
 
+.elevation-segmented {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .segmented label {
   justify-content: center;
   border: 1px solid var(--line);
@@ -319,6 +323,28 @@ button:disabled {
 
 .route-options.hidden {
   display: none;
+}
+
+.elevation-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.elevation-summary.hidden {
+  display: none;
+}
+
+.elevation-summary > div {
+  min-height: 62px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.elevation-summary strong {
+  font-size: 0.96rem;
 }
 
 .route-option-button {

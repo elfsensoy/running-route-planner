@@ -57,6 +57,7 @@ def create_route(payload: RouteRequest):
             max_distance_km=payload.max_distance_km,
             poi_preferences=payload.poi_preferences,
             selected_poi_ids=payload.selected_poi_ids,
+            elevation_preference=payload.elevation_preference,
             loop_route=payload.loop_route,
             end_lat=payload.end_lat,
             end_lon=payload.end_lon,
