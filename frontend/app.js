@@ -527,14 +527,16 @@ function renderRouteOptions(data, selectedIndex = 0) {
     button.classList.toggle("active", index === selectedIndex);
     const poiNames = option.selected_pois.map((poi) => poi.name).join(", ");
     const title = document.createElement("strong");
-    title.textContent = `Route ${index + 1}`;
+    title.textContent = option.title || `Route ${index + 1}`;
     const meta = document.createElement("span");
     const elevation = option.route.elevation;
     meta.textContent = `${option.route.total_length_km.toFixed(2)} km · ${
       option.route.within_target_range ? "inside range" : "suggestion"
     } · ${Math.round(elevation?.total_gain_m || 0)} m gain`;
     const pois = document.createElement("small");
-    pois.textContent = poiNames;
+    pois.textContent = option.kind === "distance"
+      ? "Distance based route"
+      : poiNames;
     button.appendChild(title);
     button.appendChild(meta);
     button.appendChild(pois);
@@ -570,6 +572,16 @@ function renderSummary(data, optionIndex = 0) {
   renderRouteOptions(data, optionIndex);
 
   selectedPoisEl.innerHTML = "";
+  if (selectedPois.length === 0) {
+    const item = document.createElement("li");
+    item.innerHTML = `
+      <span class="poi-name">Distance based route</span>
+      <span>No POI stops</span>
+    `;
+    selectedPoisEl.appendChild(item);
+    return;
+  }
+
   selectedPois.forEach((poi) => {
     const item = document.createElement("li");
     item.innerHTML = `

@@ -24,6 +24,7 @@ OVERLAP_RATIO_TOLERANCE = 0.03
 DIVERSITY_DISTANCE_WEIGHT = 1.25
 MIN_SAME_GROUP_SPACING_M = 180
 ROUTE_OPTION_COUNT = 3
+DISTANCE_ROUTE_ANCHOR_LIMIT = 18
 
 
 class RouteGenerationError(ValueError):
@@ -469,6 +470,55 @@ def build_loop_for_order(
     }
 
 
+def build_route_for_anchor_nodes(
+    graph: nx.MultiDiGraph,
+    start_node: int,
+    anchor_nodes: List[int],
+    routing_algorithm: str,
+    segment_cache: Dict,
+    final_node: Optional[int],
+) -> Dict:
+    all_segments = []
+    segment_lengths = []
+    current_node = start_node
+
+    for target_node in anchor_nodes:
+        segment = get_cached_segment(
+            segment_cache=segment_cache,
+            graph=graph,
+            source=current_node,
+            target=int(target_node),
+            routing_algorithm=routing_algorithm,
+        )
+        all_segments.append(segment["nodes"])
+        segment_lengths.append(segment["length_m"])
+        current_node = int(target_node)
+
+    if final_node is not None:
+        segment = get_cached_segment(
+            segment_cache=segment_cache,
+            graph=graph,
+            source=current_node,
+            target=final_node,
+            routing_algorithm=routing_algorithm,
+        )
+        all_segments.append(segment["nodes"])
+        segment_lengths.append(segment["length_m"])
+
+    route_nodes = merge_segments(all_segments)
+    overlap = route_overlap_metrics(graph, route_nodes)
+    elevation = route_elevation_metrics(graph, route_nodes)
+
+    return {
+        "route_nodes": route_nodes,
+        "total_length_m": sum(segment_lengths),
+        "segment_lengths_m": segment_lengths,
+        **overlap,
+        "elevation": elevation,
+        "selected_pois": [],
+    }
+
+
 def get_cached_segment(
     segment_cache: Dict,
     graph: nx.MultiDiGraph,
@@ -583,6 +633,95 @@ def route_rank_key(route_result: Dict, elevation_preference: str = "medium") -> 
         route_result["overlap_ratio"],
         route_result["total_length_m"],
     )
+
+
+def distance_only_rank_key(route_result: Dict) -> tuple:
+    return (
+        0 if route_result["within_target_range"] else 1,
+        route_result["distance_error_m"],
+        route_result["overlap_ratio"],
+        route_result["total_length_m"],
+    )
+
+
+def distance_anchor_nodes(
+    graph: nx.MultiDiGraph,
+    start_node: int,
+    min_distance_m: float,
+    max_distance_m: float,
+    target_distance_m: float,
+) -> List[int]:
+    cutoff_m = max_distance_m * 0.75
+    shortest_lengths = nx.single_source_dijkstra_path_length(
+        graph,
+        start_node,
+        cutoff=cutoff_m,
+        weight="length",
+    )
+    lower_bound_m = max(80.0, min_distance_m * 0.15)
+    desired_leg_m = target_distance_m / 3
+
+    candidates = [
+        (int(node_id), float(distance_m))
+        for node_id, distance_m in shortest_lengths.items()
+        if int(node_id) != int(start_node) and distance_m >= lower_bound_m
+    ]
+    candidates.sort(key=lambda item: abs(item[1] - desired_leg_m))
+    return [node_id for node_id, _ in candidates[:DISTANCE_ROUTE_ANCHOR_LIMIT]]
+
+
+def build_distance_only_route(
+    graph: nx.MultiDiGraph,
+    start_node: int,
+    min_distance_m: float,
+    max_distance_m: float,
+    target_distance_m: float,
+    routing_algorithm: str,
+    segment_cache: Dict,
+    final_node: Optional[int],
+    elevation_preference: str,
+) -> Optional[Dict]:
+    anchors = distance_anchor_nodes(
+        graph=graph,
+        start_node=start_node,
+        min_distance_m=min_distance_m,
+        max_distance_m=max_distance_m,
+        target_distance_m=target_distance_m,
+    )
+    if not anchors:
+        return None
+
+    best_result = None
+    anchor_sequences = [(anchor,) for anchor in anchors]
+    anchor_sequences.extend(permutations(anchors, 2))
+
+    for anchor_sequence in anchor_sequences:
+        try:
+            route_result = build_route_for_anchor_nodes(
+                graph=graph,
+                start_node=start_node,
+                anchor_nodes=list(anchor_sequence),
+                routing_algorithm=routing_algorithm,
+                segment_cache=segment_cache,
+                final_node=final_node,
+            )
+        except nx.NetworkXNoPath:
+            continue
+
+        total_length_m = route_result["total_length_m"]
+        route_result["within_target_range"] = (
+            min_distance_m <= total_length_m <= max_distance_m
+        )
+        route_result["distance_error_m"] = abs(total_length_m - target_distance_m)
+        route_result["elevation"]["preference"] = elevation_preference
+
+        if (
+            best_result is None
+            or distance_only_rank_key(route_result) < distance_only_rank_key(best_result)
+        ):
+            best_result = route_result
+
+    return best_result
 
 
 def serialize_route_result(graph: nx.MultiDiGraph, route_result: Dict) -> Dict:
@@ -862,9 +1001,25 @@ def generate_route(
     if not route_options:
         route_options = [best_result]
 
+    distance_only_result = build_distance_only_route(
+        graph=graph,
+        start_node=start_node,
+        min_distance_m=min_distance_m,
+        max_distance_m=max_distance_m,
+        target_distance_m=target_distance_m,
+        routing_algorithm=routing_algorithm,
+        segment_cache=segment_cache,
+        final_node=final_node,
+        elevation_preference=elevation_preference,
+    )
+    if distance_only_result is not None:
+        route_options.append(distance_only_result)
+
     serialized_options = [
         {
             "id": index + 1,
+            "kind": "distance" if not option["selected_pois"] else "poi",
+            "title": "Another route" if not option["selected_pois"] else f"Route {index + 1}",
             "route": serialize_route_result(graph, option),
             "selected_pois": option["selected_pois"],
         }
